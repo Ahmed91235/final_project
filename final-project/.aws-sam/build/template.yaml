@@ -1,0 +1,186 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Simple Task App
+Resources:
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: TaskAppUserPool
+      AutoVerifiedAttributes:
+      - email
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId:
+        Ref: UserPool
+      ClientName: taskAppClient
+      GenerateSecret: false
+  TasksTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+      - AttributeName: UserId
+        AttributeType: S
+      - AttributeName: TaskId
+        AttributeType: S
+      KeySchema:
+      - AttributeName: UserId
+        KeyType: HASH
+      - AttributeName: TaskId
+        KeyType: RANGE
+      BillingMode: PAY_PER_REQUEST
+  MyApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      Auth:
+        DefaultAuthorizer: CognitoAuthorizer
+        Authorizers:
+          CognitoAuthorizer:
+            Type: Cognito
+            UserPoolArn:
+              Fn::GetAtt:
+              - UserPool
+              - Arn
+            Identity:
+              Header: Authorization
+      Cors:
+        AllowOrigins: '*'
+        AllowHeaders: '*'
+        AllowMethods: GET,POST,PUT,DELETE,OPTIONS
+  GetTasksFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: GetTasksFunction
+      Handler: getTasks.handler
+      Runtime: nodejs18.x
+      Policies:
+      - DynamoDBCrudPolicy:
+          TableName:
+            Ref: TasksTable
+      Environment:
+        Variables:
+          TABLE_NAME:
+            Ref: TasksTable
+      Events:
+        GetTasksApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /tasks
+            Method: get
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: GetTasksFunction
+  CreateTaskFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: CreateTaskFunction
+      Handler: createTask.handler
+      Runtime: nodejs18.x
+      Policies:
+      - DynamoDBCrudPolicy:
+          TableName:
+            Ref: TasksTable
+      Environment:
+        Variables:
+          TABLE_NAME:
+            Ref: TasksTable
+      Events:
+        CreateTaskApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /tasks
+            Method: post
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: CreateTaskFunction
+  UpdateTaskFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: UpdateTaskFunction
+      Handler: updateTask.handler
+      Runtime: nodejs18.x
+      Policies:
+      - DynamoDBCrudPolicy:
+          TableName:
+            Ref: TasksTable
+      Environment:
+        Variables:
+          TABLE_NAME:
+            Ref: TasksTable
+      Events:
+        UpdateTaskApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /tasks/{taskId}
+            Method: put
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: UpdateTaskFunction
+  DeleteTaskFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: DeleteTaskFunction
+      Handler: deleteTask.handler
+      Runtime: nodejs18.x
+      Policies:
+      - DynamoDBCrudPolicy:
+          TableName:
+            Ref: TasksTable
+      Environment:
+        Variables:
+          TABLE_NAME:
+            Ref: TasksTable
+      Events:
+        DeleteTaskApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /tasks/{taskId}
+            Method: delete
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: DeleteTaskFunction
+  TasksOptionsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: index.handler
+      Runtime: nodejs18.x
+      InlineCode: exports.handler=async()=>({statusCode:200,headers:{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST,PUT,DELETE,OPTIONS','Access-Control-Allow-Headers':'*'},body:''});
+      Events:
+        TasksOptionsApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /tasks
+            Method: options
+  TasksIdOptionsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: index.handler
+      Runtime: nodejs18.x
+      InlineCode: exports.handler=async()=>({statusCode:200,headers:{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST,PUT,DELETE,OPTIONS','Access-Control-Allow-Headers':'*'},body:''});
+      Events:
+        TasksIdOptionsApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: MyApi
+            Path: /tasks/{taskId}
+            Method: options
+Outputs:
+  ApiUrl:
+    Value:
+      Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Prod
